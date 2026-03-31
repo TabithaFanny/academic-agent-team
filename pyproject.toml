@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "academic-agent-team"
-version = "0.1.0"
-description = "PRD-aligned MVP scaffold for a multi-agent academic writing system."
+version = "1.7.0"
+description = "Multi-agent academic paper writing system — AutoGen 0.7 GraphFlow, 5-agent pipeline, PRD v1.7 aligned."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
