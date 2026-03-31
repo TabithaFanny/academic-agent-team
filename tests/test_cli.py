@@ -26,7 +26,9 @@ def _isolate_db(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     与 tmp_path 对象不相等（/var ≠ /private/var）。
     """
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setenv("SESSION_DB", str(tmp_path / "session_store" / "sessions.db"))
+    # resolve() 确保 /var/... → /private/var/... 归一化，与 cwd 匹配
+    db_path = (tmp_path / "session_store" / "sessions.db").resolve()
+    monkeypatch.setenv("SESSION_DB", str(db_path))
 
 
 def test_start_mock_creates_session(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
@@ -125,4 +127,37 @@ def test_start_real_without_key_fails(tmp_path: Path, monkeypatch: pytest.Monkey
     assert exit_code == 1
     out = capsys.readouterr().err
     assert "API key" in out
+
+
+def test_start_real_autogen_uses_mock_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """paper-team start --real --engine autogen 无 API key 时自动降级到 MockClient，成功完成。"""
+    _isolate_db(tmp_path, monkeypatch)
+    monkeypatch.delenv("ANTHROPIC_AUTH_TOKEN", raising=False)
+
+    # AutoGen pipeline fallback 到 mock，全程无需真实 API key
+    exit_code = main(["start", "--real", "--engine", "autogen", "--topic", "测试", "--journal", "中文核心"])
+    assert exit_code == 0
+
+    db_path = tmp_path / "session_store" / "sessions.db"
+    assert db_path.exists()
+
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute("SELECT id, topic, status FROM sessions").fetchall()
+    conn.close()
+    assert len(rows) == 1
+    assert rows[0][1] == "测试"
+
+
+def test_list_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture):
+    """paper-team list 在 DB 存在但无 session 时提示空列表。"""
+    _isolate_db(tmp_path, monkeypatch)
+    # 通过 connect() 初始化 schema（确保 DB 和表结构存在，但无任何 session）
+    from academic_agent_team.storage.db import connect
+    db_path = (tmp_path / "session_store" / "sessions.db").resolve()
+    conn = connect(db_path)
+    conn.close()
+    exit_code = main(["list"])
+    assert exit_code == 0
+    out = capsys.readouterr().out
+    assert "No sessions found" in out
 
