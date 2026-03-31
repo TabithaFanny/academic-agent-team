@@ -11,6 +11,10 @@ requires-python = ">=3.11"
 dependencies = [
   "rich>=13.7",
   "textual>=0.61",
+  "pydantic>=2.0",
+  "openai>=1.0",
+  "autogen-agentchat>=0.4",
+  "anthropic>=0.20.0",
 ]
 
 [project.optional-dependencies]

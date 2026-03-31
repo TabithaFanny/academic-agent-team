@@ -35,6 +35,7 @@ def _topic_payload(session_id: str, topic: str, journal: str) -> dict:
         "journal_type": journal,
         "language": "zh",
         "session_id": session_id,
+        "contract_version": "1.0.0",
     }
 
 
@@ -56,6 +57,7 @@ def _literature_payload(session_id: str) -> dict:
         "verified_count": 1,
         "total_found": 1,
         "session_id": session_id,
+        "contract_version": "1.0.0",
     }
 
 
@@ -71,9 +73,10 @@ def _writing_payload(session_id: str) -> dict:
             "discussion": "模型可解释性和治理透明度需要进一步验证。",
             "conclusion": "该方法可作为中文核心论文写作的实验基线。",
         },
-        "word_count": 320,
+        "word_count": 3200,
         "version_id": "v1",
         "session_id": session_id,
+        "contract_version": "1.0.0",
     }
 
 
@@ -84,6 +87,7 @@ def _review_payload(session_id: str) -> dict:
         "overall_score": 7.5,
         "major_issues": [
             {
+                "issue_id": "M001",
                 "section": "methodology",
                 "problem": "实验细节不足",
                 "priority": "high",
@@ -92,6 +96,7 @@ def _review_payload(session_id: str) -> dict:
         ],
         "minor_issues": [
             {
+                "issue_id": "m001",
                 "section": "introduction",
                 "problem": "背景可再压缩",
                 "priority": "low",
@@ -100,6 +105,7 @@ def _review_payload(session_id: str) -> dict:
         ],
         "adopted_issues": [],
         "session_id": session_id,
+        "contract_version": "1.0.0",
     }
 
 
@@ -117,6 +123,7 @@ def _polish_payload(session_id: str, writing_payload: dict) -> dict:
             "readability_score": 4.3,
         },
         "session_id": session_id,
+        "contract_version": "1.0.0",
     }
 
 
