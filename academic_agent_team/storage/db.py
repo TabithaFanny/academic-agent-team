@@ -387,6 +387,8 @@ def insert_raw_response(
     agent: str,
     stage: str,
     content: str,
+    model_id: str | None = None,
+    cost_cny: float | None = None,
 ) -> str:
     rid = str(uuid.uuid4())
     sha = _sha256(content)
