@@ -34,7 +34,11 @@ from academic_agent_team.storage.db import (
 # ─── 辅助 ────────────────────────────────────────────────────────────────────
 
 def _db_path(base_dir: Path | None = None) -> Path:
-    base = (base_dir or Path.cwd()).resolve()  # resolve() 归一化 /var↔/private/var 等 symlink
+    base = (base_dir or Path.cwd()).resolve()
+    # 优先级：环境变量 > .env 文件 > 默认路径
+    env_db = os.environ.get("SESSION_DB")
+    if env_db:
+        return Path(env_db).resolve()
     env_path = base / ".env"
     if env_path.exists():
         for raw in env_path.read_text(encoding="utf-8").splitlines():
@@ -215,10 +219,7 @@ def _cmd_list(args: argparse.Namespace) -> int:
     """列出最近 session。"""
     base_dir = Path.cwd()
     db_path = _db_path(base_dir)
-    if not db_path.exists():
-        print(f"❌ Session DB not found: {db_path}", file=sys.stderr)
-        return 1
-
+    # connect() 会自动创建 session_store/ 目录（如不存在）
     conn = sqlite3.connect(db_path)
     sessions = list_sessions(conn, limit=args.limit)
     conn.close()
