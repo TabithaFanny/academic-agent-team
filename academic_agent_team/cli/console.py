@@ -8,6 +8,7 @@ cli/console.py
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import os
 import sqlite3
@@ -16,7 +17,7 @@ from pathlib import Path
 
 from academic_agent_team.config.role_profiles import parse_role_profile_snapshot
 from academic_agent_team.pipeline import run_mock_pipeline
-from academic_agent_team.pipeline_real import run_pipeline
+from academic_agent_team.pipeline_real import run_pipeline, run_autogen_pipeline
 from academic_agent_team.session_logger import SessionLogger
 from academic_agent_team.storage.db import (
     connect,
@@ -33,7 +34,7 @@ from academic_agent_team.storage.db import (
 # ─── 辅助 ────────────────────────────────────────────────────────────────────
 
 def _db_path(base_dir: Path | None = None) -> Path:
-    base = base_dir or Path.cwd()
+    base = (base_dir or Path.cwd()).resolve()  # resolve() 归一化 /var↔/private/var 等 symlink
     env_path = base / ".env"
     if env_path.exists():
         for raw in env_path.read_text(encoding="utf-8").splitlines():
@@ -63,6 +64,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
     journal = args.journal or "中文核心"
     run_mode = getattr(args, "mode", "autopilot")
     budget = getattr(args, "budget", 35.0)
+    engine = getattr(args, "engine", "autogen")
 
     if args.mock:
         print("[Mock] Running pipeline...")
@@ -71,23 +73,44 @@ def _cmd_start(args: argparse.Namespace) -> int:
         print(f"   Output: {base_dir / 'output' / session_id}")
         return 0
 
-    api_cfg = _resolve_api_config(args)
-    if not api_cfg["api_key"] and not args.mock:
-        print("❌ API key required for real mode.", file=sys.stderr)
-        print("   Set ANTHROPIC_AUTH_TOKEN env var, or pass --api-key", file=sys.stderr)
-        return 1
+    # --real 模式
+    if engine == "sequential":
+        api_key = args.api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
+        if not api_key:
+            print("❌ API key required for sequential real mode.", file=sys.stderr)
+            print("   Set ANTHROPIC_AUTH_TOKEN env var, or pass --api-key", file=sys.stderr)
+            return 1
+        print(f"[Real/Sequential] topic={topic} journal={journal} run_mode={run_mode}")
+        try:
+            session_id = run_pipeline(
+                base_dir=base_dir,
+                topic=topic,
+                journal=journal,
+                use_mock=False,
+                run_mode=run_mode,
+                budget_cap_cny=budget,
+                api_key=api_key,
+                base_url=args.base_url or os.environ.get("ANTHROPIC_BASE_URL"),
+                model=args.model or os.environ.get("ANTHROPIC_MODEL"),
+            )
+            print(f"✅ Session completed: {session_id}")
+            print(f"   Output: {base_dir / 'output' / session_id}")
+            return 0
+        except Exception as e:
+            print(f"❌ Pipeline failed: {e}", file=sys.stderr)
+            return 1
 
-    print(f"[Real] topic={topic} journal={journal} run_mode={run_mode}")
+    # AutoGen GraphFlow 引擎（默认）
+    print(f"[Real/AutoGen] topic={topic} journal={journal} run_mode={run_mode}")
     try:
-        session_id = run_pipeline(
+        session_id = asyncio.run(run_autogen_pipeline(
             base_dir=base_dir,
             topic=topic,
             journal=journal,
             use_mock=False,
             run_mode=run_mode,
             budget_cap_cny=budget,
-            **api_cfg,
-        )
+        ))
         print(f"✅ Session completed: {session_id}")
         print(f"   Output: {base_dir / 'output' / session_id}")
         return 0
@@ -381,15 +404,18 @@ def build_parser() -> argparse.ArgumentParser:
     # ── start ──────────────────────────────────────────────────────────────
     start = sub.add_parser("start", help="启动新 session")
     start.add_argument("--mock", action="store_true", help="使用 Mock LLM（不消耗 API）")
-    start.add_argument("--real", nargs="?", const="env", default="mock",
-                       help="使用真实 LLM（默认从环境变量读取 key）")
+    start.add_argument("--real", action="store_true",
+                       help="使用真实 LLM（默认 AutoGen GraphFlow 引擎）")
     start.add_argument("--topic", help="研究课题")
     start.add_argument("--journal", help="目标期刊（中文核心/CSSCI/IEEE Trans/CCF-A）")
     start.add_argument("--mode", default="autopilot", choices=["autopilot", "manual"],
                        help="执行模式（默认 autopilot）")
     start.add_argument("--budget", type=float, default=35.0,
                        help="预算上限 CNY（默认 35.0）")
-    start.add_argument("--api-key", help="API Key（优先于环境变量）")
+    start.add_argument("--engine", default="autogen",
+                       choices=["autogen", "sequential"],
+                       help="引擎：autogen=AutoGen GraphFlow（默认），sequential=顺序 pipeline")
+    start.add_argument("--api-key", help="API Key（sequential 引擎需要）")
     start.add_argument("--base-url", help="API Base URL")
     start.add_argument("--model", help="模型名称")
     start.add_argument("--no-interactive", action="store_true",
@@ -471,6 +497,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "start" and getattr(args, "no_interactive", False):
         args.mock = False
+        args.real = True
         args.mode = "autopilot"
     return args.func(args)
 
