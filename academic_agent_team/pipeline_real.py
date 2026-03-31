@@ -47,6 +47,8 @@ from academic_agent_team.storage.db import (
     update_session_run_mode,
     update_session_stage,
 )
+from academic_agent_team.core.autogen_adapter import ModelClientAdapter
+from academic_agent_team.core.team.graph_flow_team import build_academic_team
 
 if TYPE_CHECKING:
     from academic_agent_team.core.base_client import BaseModelClient
@@ -462,5 +464,213 @@ def run_pipeline(
     })
 
     print(f"[{session_id[:8]}] 完成！总消耗: ¥{round(total_cost, 6)} | 字数: {write_payload.get('word_count', 0)}")
+    conn.close()
+    return session_id
+
+
+# ─── AutoGen 0.7 Pipeline ───────────────────────────────────────────────────
+
+async def run_autogen_pipeline(
+    base_dir: Path,
+    topic: str,
+    journal: str,
+    use_mock: bool = False,
+    run_mode: str = "autopilot",
+    budget_cap_cny: float = DEFAULT_BUDGET_CAP_CNY,
+    max_messages: int = 100,
+) -> str:
+    """
+    AutoGen 0.7 GraphFlow Pipeline — 对齐 PRD Section 7.5。
+
+    使用 AutoGen GraphFlow 编排 5 个 Agent，按 handoff 拓扑自动路由：
+        advisor → researcher → writer → reviewer → polisher → [终止]
+
+    参数：
+        base_dir: 项目根目录（session_store 和 output 在此之下）
+        topic: 研究课题
+        journal: 目标期刊
+        use_mock: True 则全部使用 MockClient（用于测试/演示）
+        run_mode: autopilot | manual
+        budget_cap_cny: 预算上限（元）
+        max_messages: AutoGen 团队最大消息数
+
+    返回：
+        session_id: 本次会话 ID
+
+    用法：
+        import asyncio
+        session_id = asyncio.run(run_autogen_pipeline(
+            base_dir=Path("."),
+            topic="大模型在学术写作中的应用",
+            journal="中文核心",
+        ))
+    """
+    import asyncio
+
+    from academic_agent_team.core.clients.mock_client import MockClient
+    from autogen_agentchat.messages import HandoffMessage, TextMessage
+
+    session_store = base_dir / "session_store"
+    db_path = session_store / "sessions.db"
+    conn = connect(db_path)
+
+    role_snapshot = build_role_profile()
+    session_id = create_session(
+        conn=conn,
+        topic=topic,
+        journal_type=journal,
+        language="zh",
+        model_config=role_snapshot,
+        run_mode=run_mode,
+        budget_cap_cny=budget_cap_cny,
+    )
+
+    output_dir = base_dir / "output" / session_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    logger = SessionLogger(session_store / "logs" / f"{session_id}.log")
+    logger.append({
+        "event": "pipeline_start",
+        "ts": _ts(),
+        "session_id": session_id,
+        "topic": topic,
+        "journal": journal,
+        "run_mode": run_mode,
+        "engine": "autogen07",
+        "budget_cap_cny": budget_cap_cny,
+    })
+
+    # ── 构建 ChatCompletionClient（BaseModelClient → ModelClientAdapter）──────
+    # 每个 Agent 独立 client；同 provider 可共享，这里按 Agent 隔离以支持独立降级
+    def _client_for(agent: str):
+        if use_mock:
+            return ModelClientAdapter(MockClient(), provider_name="mock")
+        client, model_id = _get_client_for_agent(agent)
+        return ModelClientAdapter(client, provider_name=model_id)
+
+    advisor_client = _client_for("advisor")
+    researcher_client = _client_for("researcher")
+    writer_client = _client_for("writer")
+    reviewer_client = _client_for("reviewer")
+    polisher_client = _client_for("polisher")
+
+    # ── 构建并运行 AutoGen 团队 ────────────────────────────────────────────
+    print(f"[{session_id[:8]}] AutoGen 团队启动 (GraphFlow) ...")
+    team = build_academic_team(
+        advisor_client=advisor_client,
+        researcher_client=researcher_client,
+        writer_client=writer_client,
+        reviewer_client=reviewer_client,
+        polisher_client=polisher_client,
+        topic=topic,
+        journal=journal,
+        session_id=session_id,
+        max_messages=max_messages,
+    )
+
+    # 收集各阶段输出
+    stage_outputs: dict[str, dict] = {}  # agent_name → parsed JSON payload
+    agent_raw_content: dict[str, str] = {}  # agent_name → raw content string
+    total_cost = 0.0
+
+    # 阶段名称映射（Agent 名 → pipeline stage 名）
+    AGENT_STAGE_MAP = {
+        "advisor": "topic_done",
+        "researcher": "literature_done",
+        "writer": "writing_done",
+        "reviewer": "review_done",
+        "polisher": "polish_done",
+    }
+
+    # 流式消费消息，实时打印进度 + 持久化
+    async for msg in team.run_stream():
+        if isinstance(msg, TextMessage):
+            agent = msg.source
+            raw_content = msg.content if isinstance(msg.content, str) else str(msg.content)
+            agent_raw_content[agent] = raw_content
+
+            # 解析并验证 payload
+            parsed = _parse_json_response(raw_content)
+            if parsed:
+                stage = AGENT_STAGE_MAP.get(agent)
+                if stage:
+                    stage_outputs[agent] = parsed
+                    # 持久化 raw response
+                    model_id = getattr(advisor_client, "_model_id", "unknown")
+                    insert_raw_response(conn, session_id, agent, stage, raw_content, model_id, cost_cny=None)
+                    # 持久化 artifact
+                    insert_artifact(conn, session_id, stage, f"{agent}_output",
+                                   json.dumps(parsed, ensure_ascii=False, indent=2))
+                    # 更新 session stage
+                    update_session_stage(conn, session_id, stage)
+                    logger.append({
+                        "event": "agent_output",
+                        "ts": _ts(),
+                        "session_id": session_id,
+                        "agent": agent,
+                        "stage": stage,
+                    })
+                    print(f"[{session_id[:8]}] {agent} → {stage}")
+
+        elif isinstance(msg, HandoffMessage):
+            from_agent = getattr(msg, "source", "?")
+            print(f"[{session_id[:8]}] handoff: {from_agent} → {msg.target}")
+            logger.append({
+                "event": "handoff",
+                "ts": _ts(),
+                "session_id": session_id,
+                "from": from_agent,
+                "to": msg.target,
+            })
+
+        # 忽略其他消息类型（事件、chunk 等）
+
+    # ── 最终化 ───────────────────────────────────────────────────────────────
+    # 从收集的输出中提取最终内容
+    paper_text = ""
+    if "writer" in stage_outputs:
+        sections = stage_outputs["writer"].get("sections", {})
+        if isinstance(sections, dict):
+            paper_text = "\n\n".join(sections.values())
+        else:
+            paper_text = str(sections)
+        word_count = stage_outputs["writer"].get("word_count", len(paper_text))
+    else:
+        word_count = 0
+
+    final_sections = stage_outputs.get("polisher", {}).get("polished_sections", {})
+    if isinstance(final_sections, dict):
+        final_text = "\n\n".join(final_sections.values())
+    else:
+        final_text = paper_text
+
+    # 累计 cost（从 adapter 的 total_usage）
+    for client in [advisor_client, researcher_client, writer_client, reviewer_client, polisher_client]:
+        usage = client.actual_usage()
+        if usage.completion_tokens > 0 or usage.prompt_tokens > 0:
+            # 估算单价（精确计费依赖具体 provider，这里用占位）
+            total_cost += 0.0  # cost_cny 已在上游 client 中记录
+
+    # 写文件
+    (output_dir / "paper.md").write_text(final_text or paper_text, encoding="utf-8")
+    (output_dir / "raw_responses.json").write_text(
+        json.dumps(agent_raw_content, ensure_ascii=False, indent=2), encoding="utf-8")
+    (output_dir / "README.txt").write_text(
+        f"session_id={session_id}\ntopic={topic}\njournal={journal}\n"
+        f"run_mode={run_mode}\nengine=autogen07\nbudget_cap_cny={budget_cap_cny}\n"
+        f"word_count={word_count}\n",
+        encoding="utf-8")
+
+    update_session_stage(conn, session_id, stage="export", status="completed")
+    logger.append({
+        "event": "pipeline_complete",
+        "ts": _ts(),
+        "session_id": session_id,
+        "stage": "export",
+        "agents_run": list(stage_outputs.keys()),
+        "word_count": word_count,
+    })
+
+    print(f"[{session_id[:8]}] AutoGen Pipeline 完成！")
     conn.close()
     return session_id
