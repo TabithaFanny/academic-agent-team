@@ -70,6 +70,28 @@ def _cmd_start(args: argparse.Namespace) -> int:
     budget = getattr(args, "budget", 35.0)
     engine = getattr(args, "engine", "autogen")
 
+    # ── TUI 模式 ──────────────────────────────────────────────────────────────
+    if getattr(args, "tui", False):
+        try:
+            from academic_agent_team.tui.app import run_tui
+        except ImportError as e:
+            print(f"❌ {e}", file=sys.stderr)
+            return 1
+        run_tui(
+            engine=engine,
+            topic=topic,
+            journal=journal,
+            base_dir=str(base_dir),
+            use_mock=args.mock,
+            run_mode=run_mode,
+            budget_cap_cny=budget,
+            api_key=args.api_key or os.environ.get("ANTHROPIC_AUTH_TOKEN", ""),
+            base_url=args.base_url or os.environ.get("ANTHROPIC_BASE_URL", ""),
+            model=args.model or os.environ.get("ANTHROPIC_MODEL", ""),
+        )
+        return 0
+
+    # ── Headless 模式 ─────────────────────────────────────────────────────────
     if args.mock:
         print("[Mock] Running pipeline...")
         session_id = run_mock_pipeline(base_dir=base_dir, topic=topic, journal=journal)
@@ -421,6 +443,8 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--model", help="模型名称")
     start.add_argument("--no-interactive", action="store_true",
                        help="兼容性参数（等同于 --real --mode autopilot）")
+    start.add_argument("--tui", action="store_true",
+                       help="启动 Textual TUI 界面（替代 headless CLI）")
     start.set_defaults(func=_cmd_start)
 
     # ── resume ─────────────────────────────────────────────────────────────
