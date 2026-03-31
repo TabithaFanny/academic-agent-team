@@ -383,7 +383,7 @@ Feature: 学术论文 AI 协作写作
 
 | 组件 | 技术选型 | 说明 |
 |------|---------|------|
-| Agent 框架 | AutoGen 0.4+ | Microsoft 开源，多 Agent 协作 |
+| Agent 框架 | AutoGen 0.7+ | Microsoft 开源，多 Agent 协作，支持 GroupChat + 可中断调度器 |
 | 编程语言 | Python 3.11+ | AutoGen 依赖 |
 | CLI 界面 | Rich / Textual | 终端交互美化 |
 | 模型客户端 | autogen-core | 支持多模型 |
@@ -938,17 +938,21 @@ tests/
 
 ## 8. AI/ML Specifications
 
-### 模型配置
+### 模型配置（对齐 Section 7.7 ROLE_PROFILE 默认值）
 
 | Agent | Model | Temperature | Max Tokens | 理由 |
 |-------|-------|-------------|------------|------|
-| 选题顾问 | `claude-opus-4-5`（或最新 Opus 版本） | 0.7 | 4096 | 创意分析能力 |
-| 文献研究员 | `gpt-4-turbo-preview` | 0.3 | 8192 | 事实总结准确 |
-| 论文写手 | `claude-sonnet-4-5`（或最新 Sonnet 版本） | 0.5 | 8192 | 写作质量高 |
-| 审稿人 | `gpt-4-turbo-preview` | 0.2 | 4096 | 严谨批评 |
+| 选题顾问 | `claude-sonnet-4-5`（`sonnet`，ROLE_PROFILE 默认） | 0.7 | 4096 | 创意分析能力强；经费充足时可选 `opus` |
+| 文献研究员 | `gpt-4o`（`gpt4turbo` 备选） | 0.3 | 8192 | 事实总结准确；DeepSeek V3 亦可（成本更低） |
+| 论文写手 | `claude-sonnet-4-5`（`sonnet`，ROLE_PROFILE 默认） | 0.5 | 8192 | 写作质量高 |
+| 审稿人 | `gpt-4o`（`gpt4turbo` 备选） | 0.2 | 4096 | 严谨批评 |
 | 图表师 (v1.1) | `gpt-4o` | 0.4 | 4096 | 支持 Vision |
 
-> ⚠️ **实现注意**：模型 ID 请通过 `config/models.py` 中的常量配置，不要硬编码。各平台 API ID 以官方文档为准，上表仅为参考命名。
+> ⚠️ **实现注意**：
+> - **Section 7.7 的 `ROLE_PROFILE` 为权威默认值**，Section 8 的上表供参考（标注温度/max_tokens）；
+> - **Section 7.7 与 Section 8 的冲突（v1.5 遗留）已在本版本统一为 sonnet/gpt4o 配置**；
+> - 模型 ID 通过 `config/models.py` 中的 `MODEL_REGISTRY` 配置，**禁止硬编码**；
+> - 运行时可通过 `role set` 热切换（见 Section 9.2），不影响已完成阶段。
 
 ### Prompt 模板整合
 
@@ -1259,7 +1263,7 @@ paper-team start --draft ./my_draft.md --stage writing
 | **o1** | OpenAI | ¥108.0 | ¥432.0 | 推理能力强 |
 | **DeepSeek V3** | DeepSeek | ¥2.02 (miss) / ¥0.20 (R1-hit) | ¥3.02 | 极致性价比；R1 适合推理任务 |
 | **GLM-4-Flash** | 智谱AI | ¥1.0 | ¥1.0 | 轻量/免费额度内可用 |
-| **GLM-4（旗舰）** | 智谱AI | ¥100.0 | ¥100.0 | 旗舰版，¥0.1/千tokens（即 ¥100.0/1M tokens，等价值） |
+| **GLM-4（旗舰）** | 智谱AI | ¥100.0 | ¥100.0 | 旗舰版（¥100/百万tokens，与表中 ¥100/1M 一致） |
 | **MiniMax** | MiniMax | 按官方实时计费 | 按官方实时计费 | 多模态，语音资源包另计 |
 | **Ollama (本地)** | 用户自建 | 免费 | 免费 | 需要 GPU 硬件 |
 
@@ -1764,7 +1768,7 @@ prompt_id,name,file,version,date,blind_test_score,test_count,notes
 
 | # | 陷阱 | 触发条件 | 症状 | 解决方案 |
 |---|------|----------|------|----------|
-| T01 | AutoGen 版本陷阱（0.2/0.4/1.x 混用） | `pip install autogen` 不指定版本 | `ImportError: cannot import name 'GroupChat'` 或 `AttributeError: module 'autogen_agentchat' has no attribute 'GroupChat'` | 必须 `pip install "autogen-agentchat[0.4]>=0.4,<1.0"`（见 `pyproject.toml`），禁止 `pip install autogen`（老 0.2 版本）；当前使用 `autogen-agentchat` 包（非 `pyautogen`），参见 Section 7.5 |
+| T01 | AutoGen 版本不对 | `pip install autogen` 安装了旧版 | `ImportError: cannot import name 'GroupChat'` 或 API 不兼容 | 必须 `pip install autogen-agentchat[ollama]>=0.7`，参见 Section 7.5 |
 | T02 | `.env` 里有空格导致 Key 读取失败 | `.env` 文件 `ANTHROPIC_API_KEY = sk-ant-...`（等号两边有空格） | API 返回 `authentication_error` | 用 `strip()` 读取 env 值，install 时检查格式 |
 | T03 | SQLite 并发写入冲突 | 两个 AutoGen Worker 同时写 session DB | `sqlite3.OperationalError: database is locked` | 使用 `check_same_thread=False` + WAL 模式 + 写锁队列 |
 | T04 | macOS 中文路径导致文件写入失败 | 用户名是中文，`~/Library/Application Support/` 路径含中文 | `FileNotFoundError` 在 `session_store/` | 所有路径处理加 `pathlib.Path.expanduser()` + UTF-8 编码测试 |
@@ -1796,24 +1800,29 @@ prompt_id,name,file,version,date,blind_test_score,test_count,notes
 **Version**: 1.7
 **Author**: Academic Agent Team
 **Date**: 2026-03-31
-**Status**: In Development
+**Status**: In Development (活跃迭代中)
 **Changelog**:
+- v1.7: P3 PRD 内部矛盾修复：
+  - ✅ §10.6 DeepSeek V3.2 → 统一为 DeepSeek V3（R1 推理任务另注）
+  - ✅ §10.6 GLM-4 旗舰版定价描述统一为 ¥100/百万tokens（与表中数值一致）
+  - ✅ §7.5 技术栈 AutoGen 0.4+ → AutoGen 0.7+（对齐 v1.6 代码骨架）
+  - ✅ §14 T01 陷阱描述更新：AutoGen 版本检测陷阱
+  - ✅ §8 与 §7.7 模型配置冲突已统一：sonnet（默认）/ gpt4o 为推荐配置；opus 为可选升级路径；§8 新增说明禁止硬编码、引用 ROLE_PROFILE 为权威默认值
+  - ℹ️ Status: Draft → In Development
 - v1.6: 代码层重大重构（与 PRD 7.x 对齐）：
   - ✅ DB Schema 升级：补 `run_mode`/`versions`/`raw_responses` 表 + 6条索引
   - ✅ pydantic 契约模型：实现 `BasePayload`/`TopicDone` 等 + E007/E010 错误码
-  - ✅ AutoGen 骨架：5个 Agent 类（Advisor/Researcher/Writer/Reviewer/Polisher）+ 流水线编排器
-  - ✅ 补全 Client：AnthropicClient / DeepSeekClient / ZhipuClient / OllamaClient / MiniMaxClient / OpenAIClient
+  - ✅ AutoGen 0.7 骨架：5个 Agent 类（Advisor/Researcher/Writer/Reviewer/Polisher）+ `GraphFlow` 流水线编排器
+  - ✅ 补全 Client：AnthropicClient / DeepSeekClient / ZhipuClient / OllamaClient
   - ✅ MODEL_REGISTRY 升级：统一 ROLE_PROFILE / ROLE_FALLBACK / FALLBACK_ORDER（PRD 7.7 规格）
   - ✅ CLI 全命令补齐：sessions/status/cost/role/mode/rollback/diff/export（PRD 9.2 规格）
   - ✅ Semantic Scholar + CrossRef 文献检索工具（PRD M3）
   - ✅ 导出门禁四 gate（contract/citation/format/ethics）+ 修复清单输出
   - ✅ 预算超限中断逻辑（E010，`budget_cap_cny` 参数）
   - ✅ 补全 `config/role_profiles.py` / `config/journals.py`
-  - ✅ PRD Section 7.7 vs 8 模型配置矛盾：代码采用 7.7 规格（已统一）
-  - ✅ PRD Section 10.6 DeepSeek 名称：定价表已修正为 "DeepSeek V3"（API ID = `deepseek-chat`）
-  - ✅ T01 陷阱更新：AutoGen 版本陷阱现注明 `autogen-agentchat[0.4]>=0.4,<1.0`（非老 `pip install autogen`）
-  - ✅ GLM-4 旗舰版定价注释澄清：¥0.1/千tokens = ¥100.0/1M tokens（等价值）
-- v1.5: 新增 Section 7.6（接口契约 JSON Schema）、7.7（模型注册表+BaseModelClient）、7.8（SQLite Schema）、7.9（日志策略）、7.10（Mock模式）；补录 Appendix F（Prompt版本管理）；新增 Section 14（开发陷阱清单）；修复甘特图周序号（W5→W14连续）；Phase 2 改为 W6-9，Phase 3 改为 W10-14；W1 验收标准改为"5个Agent（含润色）"；修复 Section 9.0 插话注入 API 写法（inject_message→asyncio.Queue）；修正 Appendix A-D 顺序（B/C/D/E/F）；补全 GitHub Code Search API 链接至 Appendix B；v1.5 session 修复：DeepSeek V3.2→V3、T01 AutoGen 版本陷阱更新、GLM-4 旗舰版定价注释澄清、定价表列标题统一为 ¥/1M tokens
+  - ✅ PRD Section 7.7 vs 8 模型配置矛盾：代码采用 7.7 规格（v1.7 统一 PRD 文本）
+  - ✅ PRD Section 10.6 DeepSeek 名称："DeepSeek V3.2" → "DeepSeek V3"（v1.7 修）
+- v1.5: 新增 Section 7.6（接口契约 JSON Schema）、7.7（模型注册表+BaseModelClient）、7.8（SQLite Schema）、7.9（日志策略）、7.10（Mock模式）；补录 Appendix F（Prompt版本管理）；新增 Section 14（开发陷阱清单）；修复甘特图周序号（W5→W14连续）；Phase 2 改为 W6-9，Phase 3 改为 W10-14；W1 验收标准改为"5个Agent（含润色）"；修复 Section 9.0 插话注入 API 写法（inject_message→asyncio.Queue）；修正 Appendix A-D 顺序（B/C/D/E/F）；补全 GitHub Code Search API 链接至 Appendix B
 - v1.4: 新增 Appendix D（Prompt #31–#34 补充 Prompt 库）、Appendix E（tools/ 目录说明）；更新 Appendix A Skill 来源表，补全 K-Dense 和 Paper-Polish-Workflow 真实仓库地址及 License
 - v1.3: PRD Review 修复 14 个问题（Agent数量矛盾、期刊模板数量矛盾、文献调研目标不一致、模型名称不合规、TAM数字修正、AutoGen代码注释修正、chatpaper说明补充、"Skill搜索工具"明确为GitHub Code Search API、API Key风险等级提升为Medium、W4时间线拆分到W5、GLM-4定价分层、新增Section 9.0可观察流+随时插话交互模型、新增API失败处理策略、补充stale状态UI说明）
 - v1.2: 新增产品最终形态章节 (Section 1.5)、详细技术路径 (Section 7.5)、完整六阶段用户体验流程 (Section 9)、Launch Plan 细化到每周技术任务、甘特图
