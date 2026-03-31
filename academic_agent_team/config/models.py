@@ -56,7 +56,7 @@ class ModelSpec:
 
 # ─── Model Registry ───────────────────────────────────────────────────────────
 # 对齐 PRD Section 7.7 MODEL_REGISTRY
-# TODO: AnthropicClient / DeepSeekClient / ZhipuClient / OllamaClient 待实现（P1-1）
+# 支持：Anthropic / OpenAI / DeepSeek / Zhipu / MiniMax / Ollama / Mock
 
 _loaded_clients: dict[str, type["BaseModelClient"]] = {}
 
