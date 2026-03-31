@@ -1,0 +1,5 @@
+prompt_id,name,file,version,date,blind_test_score,test_count,notes
+31,选题顾问,prompt_31_topic_advisor_v1.0.md,v1.0,2026-03-31,N/A,0,原创，与agent_prompts.py ADVISOR_SYSTEM 对齐
+32,中文审稿人,prompt_32_cn_reviewer_v1.0.md,v1.0,2026-03-31,N/A,0,改编自ppw-reviewer-simulation（MIT License，Lylll9436/Paper-Polish-Workflow-skill）
+33,中文大纲生成,prompt_33_cn_outline_v1.0.md,v1.0,2026-03-31,N/A,0,原创，弥补原SKILL.md #21缺失的中文期刊适配
+34,可读性评分,prompt_34_readability_v1.0.md,v1.0,2026-03-31,N/A,0,原创，配合tools/readability_scorer.py使用

@@ -71,7 +71,7 @@ def _writing_payload(session_id: str) -> dict:
             "discussion": "模型可解释性和治理透明度需要进一步验证。",
             "conclusion": "该方法可作为中文核心论文写作的实验基线。",
         },
-        "word_count": 320,
+        "word_count": 3200,
         "version_id": "v1",
         "session_id": session_id,
     }
@@ -84,6 +84,7 @@ def _review_payload(session_id: str) -> dict:
         "overall_score": 7.5,
         "major_issues": [
             {
+                "issue_id": "M-001",
                 "section": "methodology",
                 "problem": "实验细节不足",
                 "priority": "high",
@@ -92,6 +93,7 @@ def _review_payload(session_id: str) -> dict:
         ],
         "minor_issues": [
             {
+                "issue_id": "m-001",
                 "section": "introduction",
                 "problem": "背景可再压缩",
                 "priority": "low",
