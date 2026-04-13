@@ -1,0 +1,73 @@
+# PaperGenius Pro - Governance State
+# 项目内存控制面 - 唯一真相来源
+
+project_name: "PaperGenius Pro (academic-agent-team 升级)"
+project_root: "/Volumes/E/agent team 2/academic-agent-team"
+
+# 当前阶段状态
+current_phase: 5
+phase_name: "Phase 5: 已完成（等待后续版本规划）"
+
+# 门禁状态
+gates:
+  phase_0:
+    status: "COMPLETED"
+    human_confirmed: true
+    completed_at: "2026-04-08T05:57:00Z"
+  phase_1:
+    status: "COMPLETED"
+    human_confirmed: true
+    completed_at: "2026-04-08T06:12:00Z"
+  phase_2:
+    status: "COMPLETED"
+    human_confirmed: true
+    completed_at: "2026-04-08T06:33:00Z"
+  phase_3:
+    status: "COMPLETED"
+    human_confirmed: true
+    completed_at: "2026-04-08T07:15:00Z"
+  phase_4:
+    status: "COMPLETED"
+    human_confirmed: true
+    completed_at: "2026-04-08T07:27:00Z"
+  phase_5:
+    status: "COMPLETED"
+    human_confirmed: true
+    completed_at: "2026-04-13T05:43:38Z"
+
+# 重大决策记录
+decisions:
+  D1: "AutoGen 为主，LangGraph 可混用"
+  D2: "MVP = PDF+RAG+搜索+向量库"
+  D3: "4周 → 6周开发周期"
+  D4: "GroupChat 多 Agent 讨论模式"
+  D5: "文献质量 Gate < 30 篇返回"
+  D6: "内容质量 Gate < 85 分重写"
+  D7: "CNKI 降级策略"
+  D8: "MVP 延长到 6 周"
+  D9: "自研语义查重 + paperyy API"
+  D10: "ZeroGPT + GPTZero 双引擎"
+  D11: "高质量辅助写作 + 强后处理"
+  D12: "CLI 默认执行引擎切换为 pipeline_v2，legacy 作为回退路径"
+  D13: "批准 sessions.db 迁移策略 A（ALTER TABLE 补齐 run_mode/budget_cap_cny）"
+  D14: "完成 pipeline_v2 Phase 3/4 真调用落地（writer/reviewer/polisher）并加入 JSON 兜底与 cost/model 元数据持久化"
+  D15: "新增 `paper-team release-gate` 自动化门禁（schema preflight + v2/legacy smoke + regression）"
+  D16: "完成 pipeline_v2 Phase 1/2.5 真调用改造（Advisor 选题建议 + Data Analyst 数据分析）"
+  D17: "人类确认 Gate 5 通过，批准 `v1.1 RC` 发布基线"
+
+# MVP 版本
+mvp_version: "1.1"
+mvp_features:
+  - "F101-F106"
+  - "F107-F112"
+
+# 阻塞问题
+blocking_issues: []
+
+# 待人类决策
+pending_human_decisions: []
+
+# 元数据
+created_at: "2026-04-08T05:41:00Z"
+last_updated: "2026-04-13T05:46:46Z"
+governance_version: "1.0.0"

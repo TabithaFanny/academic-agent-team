@@ -94,6 +94,51 @@ CREATE INDEX IF NOT EXISTS idx_cost_session ON cost_log(session_id);
 CREATE INDEX IF NOT EXISTS idx_raw_responses_session ON raw_responses(session_id);
 """
 
+REQUIRED_SESSION_COLUMNS = {
+    "id",
+    "topic",
+    "journal_type",
+    "language",
+    "model_config",
+    "run_mode",
+    "stage",
+    "status",
+    "budget_cap_cny",
+}
+
+# 允许对 legacy schema 做显式、可审计迁移的列定义。
+MIGRATABLE_SESSION_COLUMNS = {
+    "run_mode": "TEXT NOT NULL DEFAULT 'autopilot'",
+    "budget_cap_cny": "REAL DEFAULT 35.0",
+}
+
+
+def get_session_columns(conn: sqlite3.Connection) -> set[str]:
+    return {row[1] for row in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+
+
+def detect_missing_session_columns(conn: sqlite3.Connection) -> list[str]:
+    cols = get_session_columns(conn)
+    return sorted(REQUIRED_SESSION_COLUMNS - cols)
+
+
+def migrate_legacy_sessions_schema(conn: sqlite3.Connection) -> list[str]:
+    """
+    显式迁移 legacy sessions 表，补齐 run_mode / budget_cap_cny。
+
+    返回实际新增的列名列表。
+    """
+    conn.executescript(SCHEMA_SQL)
+    cols = get_session_columns(conn)
+    applied: list[str] = []
+    for column, ddl in MIGRATABLE_SESSION_COLUMNS.items():
+        if column in cols:
+            continue
+        conn.execute(f"ALTER TABLE sessions ADD COLUMN {column} {ddl}")
+        applied.append(column)
+    conn.commit()
+    return applied
+
 
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
@@ -101,18 +146,13 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL;")
     conn.executescript(SCHEMA_SQL)
     # 旧 schema（缺列）不会被 CREATE TABLE IF NOT EXISTS 自动修复；此处做显式检测。
-    required_session_cols = {"id", "topic", "journal_type", "language", "model_config", "run_mode", "stage", "status", "budget_cap_cny"}
-    cols = {
-        row[1]
-        for row in conn.execute("PRAGMA table_info(sessions)").fetchall()
-    }
-    missing_cols = required_session_cols - cols
+    missing_cols = detect_missing_session_columns(conn)
     if missing_cols:
         raise RuntimeError(
             "Detected legacy sessions.db schema missing columns: "
-            f"{sorted(missing_cols)}. "
+            f"{missing_cols}. "
             "Data migration strategy requires explicit approval; "
-            "use a fresh DB path for now."
+            "run `paper-team db-migrate --yes` or use a fresh DB path."
         )
     conn.commit()
     return conn

@@ -7,6 +7,14 @@ Academic Agent Team — AutoGen 0.7 Agent 定义。
 from __future__ import annotations
 
 from academic_agent_team.agents.advisor import AdvisorAgent
+from academic_agent_team.agents.data_analyst import (
+    AnalysisResult,
+    DataAnalystAgent,
+    Figure,
+    SafeExecutionError,
+    SecureSandbox,
+    StatisticalTable,
+)
 from academic_agent_team.agents.pipelined_team import build_pipeline_team, run_autogen_pipeline
 from academic_agent_team.agents.polisher import PolisherAgent
 from academic_agent_team.agents.researcher import ResearcherAgent
@@ -15,10 +23,17 @@ from academic_agent_team.agents.writer import WriterAgent
 
 __all__ = [
     "AdvisorAgent",
+    "DataAnalystAgent",
     "ResearcherAgent",
     "WriterAgent",
     "ReviewerAgent",
     "PolisherAgent",
     "build_pipeline_team",
     "run_autogen_pipeline",
+    # Data Analyst 数据结构
+    "AnalysisResult",
+    "Figure",
+    "StatisticalTable",
+    "SecureSandbox",
+    "SafeExecutionError",
 ]

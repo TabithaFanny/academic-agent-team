@@ -1,0 +1,135 @@
+<# 基础 LaTeX 模板 — 通用学术论文格式 #>
+<# 使用 XeLaTeX 编译以支持中文 #>
+\documentclass[<< paper.font_size >>, << paper.paper_size >>]{<< paper.document_class >>}
+
+% ============ 包导入 ============
+<% if paper.language == "chinese" %>
+% 中文支持
+\usepackage[UTF8]{ctex}
+<% endif %>
+
+% 基础包
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{float}
+
+% 页面设置
+\geometry{
+    left=2.5cm,
+    right=2.5cm,
+    top=2.5cm,
+    bottom=2.5cm
+}
+
+% 超链接设置
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    citecolor=blue,
+}
+
+% 参考文献样式 — GB/T 7714
+\usepackage[sort&compress]{gbt7714}
+
+% ============ 文档信息 ============
+\title{<< paper.title | escape_latex >>}
+
+\author{
+<% for author in paper.authors %>
+<< author.name | escape_latex >><% if author.is_corresponding %>$^{*}$<% endif %><% if author.affiliation %>\thanks{<< author.affiliation | escape_latex >>}<% endif %><% if not loop.last %> \and <% endif %>
+<% endfor %>
+}
+
+\date{}
+
+% ============ 文档开始 ============
+\begin{document}
+
+\maketitle
+
+% ============ 摘要 ============
+<% if paper.abstract %>
+\begin{abstract}
+<< paper.abstract | escape_latex >>
+\end{abstract}
+
+<% if paper.keywords %>
+\noindent\textbf{<% if paper.language == "chinese" %>关键词<% else %>Keywords<% endif %>：}<< paper.keywords | format_keywords >>
+<% endif %>
+<% endif %>
+
+% ============ 英文摘要（中文论文需要） ============
+<% if paper.abstract_en and paper.language == "chinese" %>
+\vspace{1em}
+\noindent\textbf{Abstract:} << paper.abstract_en | escape_latex >>
+
+<% if paper.keywords_en %>
+\noindent\textbf{Keywords:} << paper.keywords_en | format_keywords >>
+<% endif %>
+<% endif %>
+
+% ============ 正文 ============
+<% for section in paper.sections %>
+
+\<< section.level | section_cmd >>{<< section.title | escape_latex >>}
+<% if section.label %>\label{<< section.label >>}<% endif %>
+
+<< section.content >>
+
+<% endfor %>
+
+% ============ 图片 ============
+<% if has_figures %>
+<% for figure in paper.figures %>
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=<< figure.width >>]{<< figure.path >>}
+    \caption{<< figure.caption | escape_latex >>}
+    <% if figure.label %>\label{<< figure.label >>}<% endif %>
+\end{figure}
+
+<% endfor %>
+<% endif %>
+
+% ============ 表格 ============
+<% if has_tables %>
+<% for table in paper.tables %>
+\begin{table}[H]
+    \centering
+    \caption{<< table.caption | escape_latex >>}
+    <% if table.label %>\label{<< table.label >>}<% endif %>
+    \begin{tabular}{<% for _ in table.headers %>c<% endfor %>}
+        \toprule
+        <% for header in table.headers %><< header | escape_latex >><% if not loop.last %> & <% endif %><% endfor %> \\
+        \midrule
+        <% for row in table.rows %>
+        <% for cell in row %><< cell | escape_latex >><% if not loop.last %> & <% endif %><% endfor %> \\
+        <% endfor %>
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+<% endfor %>
+<% endif %>
+
+% ============ 致谢 ============
+<% if paper.acknowledgments %>
+\section*{<% if paper.language == "chinese" %>致谢<% else %>Acknowledgments<% endif %>}
+<< paper.acknowledgments | escape_latex >>
+<% endif %>
+
+% ============ 参考文献 ============
+<% if paper.references %>
+\bibliographystyle{gbt7714-numerical}
+\bibliography{<< paper.title | escape_latex | replace(" ", "_") >>}
+<% endif %>
+
+\end{document}

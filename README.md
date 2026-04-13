@@ -92,6 +92,7 @@ paper-team --help
 - `diff <session_id> <stage> <v1> <v2>` 对比版本
 - `export <session_id> [--dest <dir>]` 导出产物目录
 - `debug <session_id> [--tail N]` 查看会话摘要与日志尾部
+- `release-gate [--skip-smoke] [--skip-regression] [--target <pytest_target>]` 执行发布门禁自动化
 
 ## 6. 角色配置与运行时切换
 
@@ -134,12 +135,29 @@ pytest -q -p no:cacheprovider
 说明当前 `sessions.db` 是旧结构。当前策略是显式阻断（不自动迁移）。
 
 解决方式：
+- 显式迁移（推荐，自动备份）：
+  ```bash
+  paper-team db-migrate --yes
+  ```
 - 使用新的工作目录重新运行，或
 - 删除旧 `session_store/sessions.db` 后重建（仅在你确认不保留旧数据时）。
 
 ### 9.2 `diff` 依赖版本快照
 
 `diff` 读取 `versions` 表，若当前会话没有版本快照，会提示版本不足。
+
+### 9.3 发布前门禁检查
+
+推荐在发版前运行：
+
+```bash
+paper-team release-gate
+```
+
+该命令会自动执行：
+- schema preflight（缺列即阻断）
+- v2 + legacy mock smoke
+- 核心回归测试
 
 ## 10. 开发说明
 

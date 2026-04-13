@@ -1,0 +1,217 @@
+<# CSSCI 期刊模板 — 中文社会科学引文索引期刊格式 #>
+<# 使用 XeLaTeX 编译 #>
+\documentclass[12pt, a4paper]{article}
+
+% ============ 包导入 ============
+% 中文支持（CTeX 宏集）
+\usepackage[UTF8, heading=true]{ctex}
+
+% 基础包
+\usepackage{amsmath, amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{geometry}
+\usepackage{fancyhdr}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+
+% ============ 页面设置（CSSCI 格式要求） ============
+\geometry{
+    left=3cm,
+    right=3cm,
+    top=2.5cm,
+    bottom=2.5cm
+}
+
+% 行距设置（1.5 倍行距）
+\linespread{1.5}
+
+% 字体设置
+\setCJKmainfont{SimSun}[AutoFakeBold=2, AutoFakeSlant=0.2]
+\setCJKsansfont{SimHei}
+\setCJKmonofont{FangSong}
+
+% 章节标题格式
+\ctexset{
+    section = {
+        format = \heiti\zihao{4}\centering,
+        aftername = \quad,
+    },
+    subsection = {
+        format = \heiti\zihao{-4},
+        aftername = \quad,
+    },
+    subsubsection = {
+        format = \kaishu\zihao{-4},
+        aftername = \quad,
+    },
+}
+
+% 超链接设置
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=black,
+    urlcolor=blue,
+    citecolor=black,
+}
+
+% 图表标题格式
+\captionsetup{
+    font={small},
+    labelsep=space,
+    format=hang,
+}
+\captionsetup[figure]{name={图}}
+\captionsetup[table]{name={表}}
+
+% 参考文献样式 — GB/T 7714
+\usepackage[sort&compress]{gbt7714}
+
+% ============ 文档开始 ============
+\begin{document}
+
+% ============ 标题 ============
+\begin{center}
+    {\heiti\zihao{2} << paper.title | escape_latex >>}
+    
+    \vspace{1em}
+    
+    % 作者
+    {\fangsong\zihao{4}
+    <% for author in paper.authors %>
+    << author.name | escape_latex >><% if author.is_corresponding %>\textsuperscript{*}<% endif %><% if not loop.last %>，<% endif %>
+    <% endfor %>
+    }
+    
+    \vspace{0.5em}
+    
+    % 作者单位
+    {\songti\zihao{5}
+    <% for author in paper.authors %>
+    <% if author.affiliation %>
+    （<< author.affiliation | escape_latex >><% if author.email %>，E-mail: << author.email >><% endif %>）<% if not loop.last %>\\<% endif %>
+    <% endif %>
+    <% endfor %>
+    }
+\end{center}
+
+\vspace{1em}
+
+% ============ 中文摘要 ============
+<% if paper.abstract %>
+\noindent\textbf{摘\quad 要：}{\songti << paper.abstract | escape_latex >>}
+
+\vspace{0.5em}
+
+<% if paper.keywords %>
+\noindent\textbf{关键词：}<% for kw in paper.keywords %><< kw | escape_latex >><% if not loop.last %>；<% endif %><% endfor %>
+<% endif %>
+<% endif %>
+
+\vspace{0.5em}
+
+% ============ 中图分类号、文献标识码 ============
+\noindent\textbf{中图分类号：}G250 \quad \textbf{文献标识码：}A
+
+\vspace{1em}
+
+% ============ 英文标题与摘要 ============
+<% if paper.abstract_en %>
+\begin{center}
+    {\bfseries\zihao{3} << paper.title | escape_latex >>}
+    
+    \vspace{0.5em}
+    
+    {\zihao{5}
+    <% for author in paper.authors %>
+    << author.name | escape_latex >><% if not loop.last %>, <% endif %>
+    <% endfor %>
+    }
+\end{center}
+
+\vspace{0.5em}
+
+\noindent\textbf{Abstract:} << paper.abstract_en | escape_latex >>
+
+\vspace{0.5em}
+
+<% if paper.keywords_en %>
+\noindent\textbf{Keywords:} <% for kw in paper.keywords_en %><< kw | escape_latex >><% if not loop.last %>; <% endif %><% endfor %>
+<% endif %>
+<% endif %>
+
+\vspace{1em}
+
+% ============ 正文 ============
+<% for section in paper.sections %>
+
+\<< section.level | section_cmd >>{<< section.title | escape_latex >>}
+<% if section.label %>\label{<< section.label >>}<% endif %>
+
+<< section.content >>
+
+<% endfor %>
+
+% ============ 图片 ============
+<% if has_figures %>
+<% for figure in paper.figures %>
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=<< figure.width >>]{<< figure.path >>}
+    \caption{<< figure.caption | escape_latex >>}
+    <% if figure.label %>\label{<< figure.label >>}<% endif %>
+\end{figure}
+
+<% endfor %>
+<% endif %>
+
+% ============ 表格 ============
+<% if has_tables %>
+<% for table in paper.tables %>
+\begin{table}[H]
+    \centering
+    \caption{<< table.caption | escape_latex >>}
+    <% if table.label %>\label{<< table.label >>}<% endif %>
+    \begin{tabular}{<% for _ in table.headers %>c<% endfor %>}
+        \toprule
+        <% for header in table.headers %><< header | escape_latex >><% if not loop.last %> & <% endif %><% endfor %> \\
+        \midrule
+        <% for row in table.rows %>
+        <% for cell in row %><< cell | escape_latex >><% if not loop.last %> & <% endif %><% endfor %> \\
+        <% endfor %>
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+<% endfor %>
+<% endif %>
+
+% ============ 致谢 ============
+<% if paper.acknowledgments %>
+\section*{致谢}
+<< paper.acknowledgments | escape_latex >>
+<% endif %>
+
+% ============ 参考文献 ============
+<% if paper.references %>
+\bibliographystyle{gbt7714-numerical}
+\bibliography{references}
+<% endif %>
+
+% ============ 作者简介 ============
+\vspace{2em}
+\noindent\rule{\textwidth}{0.4pt}
+
+\noindent{\kaishu\zihao{5} \textbf{作者简介：}
+<% for author in paper.authors %>
+<< author.name | escape_latex >><% if author.is_corresponding %>（通讯作者）<% endif %><% if author.affiliation %>，<< author.affiliation | escape_latex >><% endif %><% if author.email %>，E-mail: << author.email >><% endif %><% if not loop.last %>；<% endif %>
+<% endfor %>
+}
+
+\end{document}

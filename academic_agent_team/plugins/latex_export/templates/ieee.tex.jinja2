@@ -1,0 +1,125 @@
+<# IEEE 模板 — 国际电气与电子工程师学会会议/期刊格式 #>
+\documentclass[conference]{IEEEtran}
+
+% ============ 包导入 ============
+\usepackage{cite}
+\usepackage{amsmath, amssymb, amsfonts}
+\usepackage{algorithmic}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{hyperref}
+\usepackage{float}
+
+% 超链接设置
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    filecolor=black,
+    urlcolor=blue,
+    citecolor=black,
+}
+
+% 定义新命令
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+% ============ 文档开始 ============
+\begin{document}
+
+% ============ 标题 ============
+\title{<< paper.title | escape_latex >>}
+
+% ============ 作者 ============
+\author{
+<% for author in paper.authors %>
+\IEEEauthorblockN{<< author.name | escape_latex >><% if author.is_corresponding %>$^{*}$<% endif %>}
+\IEEEauthorblockA{
+<% if author.affiliation %><< author.affiliation | escape_latex >>\\<% endif %>
+<% if author.email %><< author.email >><% endif %>
+<% if author.orcid %>\\ORCID: << author.orcid >><% endif %>
+}
+<% if not loop.last %>\and<% endif %>
+<% endfor %>
+}
+
+\maketitle
+
+% ============ 摘要 ============
+<% if paper.abstract %>
+\begin{abstract}
+<< paper.abstract | escape_latex >>
+\end{abstract}
+<% endif %>
+
+% ============ 关键词 ============
+<% if paper.keywords %>
+\begin{IEEEkeywords}
+<< paper.keywords | format_keywords(", ") >>
+\end{IEEEkeywords}
+<% endif %>
+
+% ============ 正文 ============
+<% for section in paper.sections %>
+
+\<< section.level | section_cmd >>{<< section.title | escape_latex >>}
+<% if section.label %>\label{<< section.label >>}<% endif %>
+
+<< section.content >>
+
+<% endfor %>
+
+% ============ 图片 ============
+<% if has_figures %>
+<% for figure in paper.figures %>
+\begin{figure}[htbp]
+    \centerline{\includegraphics[width=<< figure.width >>]{<< figure.path >>}}
+    \caption{<< figure.caption | escape_latex >>}
+    <% if figure.label %>\label{<< figure.label >>}<% endif %>
+\end{figure}
+
+<% endfor %>
+<% endif %>
+
+% ============ 表格 ============
+<% if has_tables %>
+<% for table in paper.tables %>
+\begin{table}[htbp]
+    \caption{<< table.caption | escape_latex >>}
+    <% if table.label %>\label{<< table.label >>}<% endif %>
+    \centering
+    \begin{tabular}{<% for _ in table.headers %>c<% endfor %>}
+        \toprule
+        <% for header in table.headers %>\textbf{<< header | escape_latex >>}<% if not loop.last %> & <% endif %><% endfor %> \\
+        \midrule
+        <% for row in table.rows %>
+        <% for cell in row %><< cell | escape_latex >><% if not loop.last %> & <% endif %><% endfor %> \\
+        <% endfor %>
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+<% endfor %>
+<% endif %>
+
+% ============ 致谢 ============
+<% if paper.acknowledgments %>
+\section*{Acknowledgment}
+<< paper.acknowledgments | escape_latex >>
+<% endif %>
+
+% ============ 参考文献 ============
+<% if paper.references %>
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+<% endif %>
+
+% ============ 作者简介（可选） ============
+<# 
+\begin{IEEEbiography}[{\includegraphics[width=1in,height=1.25in,clip,keepaspectratio]{photo}}]{Author Name}
+Biography text here.
+\end{IEEEbiography}
+#>
+
+\end{document}

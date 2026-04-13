@@ -3,6 +3,7 @@ CLI 入口 — paper-team 命令行工具（PRD 9.2 完整命令集）。
 
 支持的命令：
     start      新建 session
+    db-migrate 显式迁移 legacy sessions.db schema
     resume     恢复中断的 session
     status     查看当前进度和费用
     cost       查看实时费用明细
@@ -18,8 +19,12 @@ CLI 入口 — paper-team 命令行工具（PRD 9.2 完整命令集）。
 from __future__ import annotations
 
 import argparse
+import asyncio
+from datetime import datetime
 import json
 import os
+import subprocess
+import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -60,13 +65,17 @@ except ModuleNotFoundError:
             print(message)
 
 from academic_agent_team.pipeline import run_mock_pipeline
-from academic_agent_team.pipeline_real import run_pipeline
+from academic_agent_team.pipeline_real import run_pipeline as run_pipeline_legacy
+from academic_agent_team.pipeline_v2 import run_pipeline as run_pipeline_v2
 from academic_agent_team.session_logger import SessionLogger
 from academic_agent_team.storage.db import (
+    connect,
+    detect_missing_session_columns,
     get_all_versions,
-    update_session_model_config,
     get_session_summary,
     list_sessions,
+    migrate_legacy_sessions_schema,
+    update_session_model_config,
 )
 from academic_agent_team.config.models import AGENT_MODEL_MAP
 from academic_agent_team.config.role_profiles import (
@@ -101,6 +110,45 @@ def _connect(base_dir: Path) -> sqlite3.Connection:
     return sqlite3.connect(db_path)
 
 
+# ── db-migrate ───────────────────────────────────────────────────────────────
+
+def _cmd_db_migrate(args: argparse.Namespace) -> int:
+    base_dir = Path.cwd()
+    db_path = _db_path(base_dir)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL;")
+
+    missing_before = detect_missing_session_columns(conn)
+    if not missing_before:
+        console.print(f"[green]Schema already up to date: {db_path}[/green]")
+        conn.close()
+        return 0
+
+    console.print(f"[yellow]Detected missing session columns: {missing_before}[/yellow]")
+    if not args.yes:
+        console.print("[yellow]Dry run only. Re-run with `paper-team db-migrate --yes` to apply.[/yellow]")
+        conn.close()
+        return 0
+
+    backup_path = db_path.parent / f"{db_path.name}.bak.{datetime.now().strftime('%Y%m%d%H%M%S')}"
+    if db_path.exists():
+        shutil.copy2(db_path, backup_path)
+        console.print(f"[cyan]Backup created: {backup_path}[/cyan]")
+
+    applied = migrate_legacy_sessions_schema(conn)
+    missing_after = detect_missing_session_columns(conn)
+    conn.close()
+
+    if missing_after:
+        console.print(f"[red]Migration incomplete, missing columns remain: {missing_after}[/red]")
+        return 1
+
+    console.print(f"[green]Migration successful. Added columns: {applied or 'none'}[/green]")
+    return 0
+
+
 # ── start ─────────────────────────────────────────────────────────────────────
 
 def _cmd_start(args: argparse.Namespace) -> int:
@@ -111,14 +159,81 @@ def _cmd_start(args: argparse.Namespace) -> int:
     journal = args.journal or "中文核心"
     run_mode = getattr(args, "mode", "autopilot")
     budget = getattr(args, "budget", 35.0)
+    engine = getattr(args, "engine", "v2")
 
-    if args.mock or args.real == "mock":
+    if engine == "legacy" and (args.mock or args.real == "mock"):
         try:
             session_id = run_mock_pipeline(base_dir=base_dir, topic=topic, journal=journal)
         except RuntimeError as exc:
             console.print(f"[red]{exc}[/red]")
             return 1
-        console.print(f"[green]Session completed (mock): {session_id}[/green]")
+        console.print(f"[green]Session completed (legacy mock): {session_id}[/green]")
+        return 0
+
+    if engine == "v2":
+        # v2 模式映射：autopilot -> express, manual -> standard
+        run_mode_v2 = "express" if run_mode == "autopilot" else "standard"
+        human_callback = None
+
+        if run_mode_v2 == "standard" and not args.no_interactive:
+            async def _human_callback(
+                intervention_id: str,
+                phase: str,
+                description: str,
+                options: list[str] | None = None,
+                data: dict | None = None,
+            ) -> dict:
+                del data
+                console.print(f"\n[bold cyan]{intervention_id} / {phase}[/bold cyan] {description}")
+
+                if options:
+                    for idx, item in enumerate(options, 1):
+                        console.print(f"  {idx}. {item}")
+                    raw = input(f"请选择 [1-{len(options)}] (默认 1): ").strip()
+                    try:
+                        selected = int(raw) - 1 if raw else 0
+                        if selected < 0 or selected >= len(options):
+                            selected = 0
+                    except ValueError:
+                        selected = 0
+                    return {"selected_index": selected}
+
+                if intervention_id == "H3":
+                    raw = input("选择 A(继续迭代)/B(手动修改) [A/B, 默认 A]: ").strip().lower()
+                    return {"manual_edit": raw == "b"}
+
+                raw = input("确认继续? [Y/n]: ").strip().lower()
+                return {"auto_proceed": raw in ("", "y", "yes")}
+
+            human_callback = _human_callback
+
+        if args.mock or args.real == "mock":
+            os.environ["PAPER_TEAM_LLM_MOCK"] = "true"
+            os.environ["AI_DETECT_MOCK"] = "true"
+            os.environ["CNKI_MOCK"] = "true"
+            os.environ["CITATION_MOCK"] = "true"
+
+        try:
+            context = asyncio.run(
+                run_pipeline_v2(
+                    base_dir=base_dir,
+                    topic=topic,
+                    journal=journal,
+                    run_mode=run_mode_v2,
+                    budget_cap_cny=budget,
+                    human_callback=human_callback,
+                )
+            )
+        except RuntimeError as exc:
+            console.print(f"[red]{exc}[/red]")
+            console.print("[yellow]Tip: you can fallback with --engine legacy[/yellow]")
+            return 1
+        except Exception as exc:
+            console.print(f"[red]Pipeline v2 failed: {exc}[/red]")
+            console.print("[yellow]Tip: you can fallback with --engine legacy[/yellow]")
+            return 1
+
+        console.print(f"[green]Session completed (v2): {context.session_id}[/green]")
         return 0
 
     api_key = (
@@ -137,7 +252,7 @@ def _cmd_start(args: argparse.Namespace) -> int:
 
     console.print(f"[cyan]Real mode: base_url={base_url}, model={model}[/cyan]")
     try:
-        session_id = run_pipeline(
+        session_id = run_pipeline_legacy(
             base_dir=base_dir,
             topic=topic,
             journal=journal,
@@ -462,11 +577,115 @@ def _cmd_debug(args: argparse.Namespace) -> int:
     return 0
 
 
+# ── release-gate ─────────────────────────────────────────────────────────────
+
+def _set_env_flag(name: str, value: str, previous: dict[str, str | None]) -> None:
+    previous[name] = os.environ.get(name)
+    os.environ[name] = value
+
+
+def _restore_env_flags(previous: dict[str, str | None]) -> None:
+    for key, old_val in previous.items():
+        if old_val is None:
+            os.environ.pop(key, None)
+        else:
+            os.environ[key] = old_val
+
+
+def _cmd_release_gate(args: argparse.Namespace) -> int:
+    """
+    发布门禁自动化：
+      1) schema preflight
+      2) v2 + legacy mock smoke
+      3) regression pytest
+    """
+    base_dir = Path.cwd()
+    db_path = _db_path(base_dir)
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 1) schema preflight
+    try:
+        conn = connect(db_path)
+    except RuntimeError as exc:
+        console.print(f"[red]Schema preflight failed: {exc}[/red]")
+        console.print("[yellow]Run `paper-team db-migrate --yes` before release gate.[/yellow]")
+        return 1
+    except sqlite3.Error as exc:
+        console.print(f"[red]Schema preflight failed: unable to open DB ({exc})[/red]")
+        return 1
+    conn.close()
+    console.print(f"[green]Schema preflight passed: {db_path}[/green]")
+
+    # 2) smoke
+    if not args.skip_smoke:
+        env_backup: dict[str, str | None] = {}
+        _set_env_flag("PAPER_TEAM_LLM_MOCK", "true", env_backup)
+        _set_env_flag("AI_DETECT_MOCK", "true", env_backup)
+        _set_env_flag("CNKI_MOCK", "true", env_backup)
+        _set_env_flag("CITATION_MOCK", "true", env_backup)
+        try:
+            v2_ctx = asyncio.run(
+                run_pipeline_v2(
+                    base_dir=base_dir,
+                    topic=args.topic or "release gate v2 smoke",
+                    journal=args.journal or "中文核心",
+                    run_mode="express",
+                )
+            )
+            console.print(f"[green]Smoke passed (v2): {v2_ctx.session_id}[/green]")
+
+            legacy_session_id = run_mock_pipeline(
+                base_dir=base_dir,
+                topic=args.topic or "release gate legacy smoke",
+                journal=args.journal or "中文核心",
+            )
+            console.print(f"[green]Smoke passed (legacy): {legacy_session_id}[/green]")
+        except Exception as exc:
+            console.print(f"[red]Smoke failed: {exc}[/red]")
+            _restore_env_flags(env_backup)
+            return 1
+        _restore_env_flags(env_backup)
+    else:
+        console.print("[yellow]Smoke skipped by --skip-smoke[/yellow]")
+
+    # 3) regression
+    if args.skip_regression:
+        console.print("[yellow]Regression skipped by --skip-regression[/yellow]")
+        console.print("[green]Release gate passed (without regression).[/green]")
+        return 0
+
+    targets = args.target or ["tests"]
+    cmd = [sys.executable, "-m", "pytest", "-q", "-p", "no:cacheprovider", *targets]
+    console.print(f"[cyan]Running regression: {' '.join(targets)}[/cyan]")
+    proc = subprocess.run(
+        cmd,
+        cwd=base_dir,
+        text=True,
+        capture_output=True,
+    )
+    if proc.stdout:
+        console.print(proc.stdout.strip())
+    if proc.returncode != 0:
+        if proc.stderr:
+            console.print(proc.stderr.strip())
+        console.print("[red]Regression failed. Release gate blocked.[/red]")
+        return 1
+
+    console.print("[green]Regression passed.[/green]")
+    console.print("[green]Release gate passed.[/green]")
+    return 0
+
+
 # ── argparse 构建 ─────────────────────────────────────────────────────────────
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="paper-team")
     sub = parser.add_subparsers(dest="command", required=True)
+
+    # ── db-migrate ─────────────────────────────────────────────────────────
+    db_migrate = sub.add_parser("db-migrate", help="迁移 legacy sessions.db schema")
+    db_migrate.add_argument("--yes", action="store_true", help="确认执行迁移（会自动备份）")
+    db_migrate.set_defaults(func=_cmd_db_migrate)
 
     # ── start ──────────────────────────────────────────────────────────────
     start = sub.add_parser("start", help="新建论文写作 session")
@@ -476,6 +695,8 @@ def _build_parser() -> argparse.ArgumentParser:
     start.add_argument("--journal", default="中文核心", help="目标期刊")
     start.add_argument("--mode", default="autopilot", choices=["autopilot", "manual"],
                        help="执行模式")
+    start.add_argument("--engine", default="v2", choices=["v2", "legacy"],
+                       help="执行引擎：v2(默认) 或 legacy")
     start.add_argument("--budget", type=float, default=35.0, help="预算上限（¥）")
     start.add_argument("--api-key", help="API Key")
     start.add_argument("--base-url", help="API Base URL")
@@ -541,6 +762,19 @@ def _build_parser() -> argparse.ArgumentParser:
     debug.add_argument("session_id", help="Session ID")
     debug.add_argument("--tail", type=int, help="显示最近 N 条日志")
     debug.set_defaults(func=_cmd_debug)
+
+    # ── release-gate ──────────────────────────────────────────────────────
+    release_gate = sub.add_parser("release-gate", help="执行发布门禁（schema + smoke + regression）")
+    release_gate.add_argument("--skip-smoke", action="store_true", help="跳过 smoke 验证")
+    release_gate.add_argument("--skip-regression", action="store_true", help="跳过回归测试")
+    release_gate.add_argument("--topic", help="smoke 会话 topic（可选）")
+    release_gate.add_argument("--journal", default="中文核心", help="smoke 目标期刊")
+    release_gate.add_argument(
+        "--target",
+        action="append",
+        help="追加回归 pytest target（可重复传入）；默认内置 3 个核心用例",
+    )
+    release_gate.set_defaults(func=_cmd_release_gate)
 
     return parser
 
