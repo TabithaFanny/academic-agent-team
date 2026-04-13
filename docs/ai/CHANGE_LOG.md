@@ -19,6 +19,7 @@
 - **VERIFY**: 实机执行完整 `release-gate`（含回归）通过，`tests/test_pipeline_v2_persistence.py + tests/test_db_schema_migration.py + tests/test_cli_v2_engine.py` 共 `9 passed`
 - **DOC**: 新增 `docs/ai/RELEASE_BASELINE_V1_1_RC.md` 作为 Gate 5 人类验收基线报告
 - **GATE**: 人类确认 Gate 5 通过（Yes），`v1.1 RC` 发布基线状态更新为 `APPROVED`
+- **PLAN**: 新增 `docs/ai/V1_2_PLAN.md`，启动 v1.2 目标/风险/里程碑规划
 
 ### 2026-04-11
 - **MIGRATION**: 新增显式 DB 迁移能力：`paper-team db-migrate --yes`（自动备份后补齐 `sessions.run_mode` / `sessions.budget_cap_cny`）
